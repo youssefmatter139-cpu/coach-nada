@@ -1,0 +1,32 @@
+{
+  "name": "coach-nada-luxury-site",
+  "version": "1.0.0",
+  "private": true,
+  "type": "module",
+  "engines": {
+    "node": ">=18.0.0"
+  },
+  "scripts": {
+    "build:css": "tailwindcss -i ./public/tailwind.input.css -o ./public/tailwind.css --minify",
+    "prestart": "npm run build:css",
+    "predev": "npm run build:css",
+    "test": "node --test",
+    "start": "node backend/server.js",
+    "dev": "node --watch backend/server.js"
+  },
+  "dependencies": {
+    "compression": "^1.7.4",
+    "dotenv": "^16.4.5",
+    "express": "^4.21.2",
+    "express-rate-limit": "^7.5.0",
+    "helmet": "^8.0.0",
+    "morgan": "^1.10.0",
+    "lucide": "0.468.0",
+    "zod": "^3.23.8",
+    "@supabase/supabase-js": "^2.57.4"
+  },
+  "devDependencies": {
+    "@tailwindcss/cli": "4.3.0",
+    "tailwindcss": "4.3.0"
+  }
+}
