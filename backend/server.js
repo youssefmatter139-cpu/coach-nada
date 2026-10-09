@@ -30,8 +30,20 @@ function cleanEnvValue(value) {
 }
 
 const SUPABASE_URL = cleanEnvValue(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
-const SERVICE_KEY = cleanEnvValue(process.env.SUPABASE_SERVICE_ROLE_KEY);
-const ANON_KEY = cleanEnvValue(process.env.SUPABASE_ANON_KEY || process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY);
+const SERVICE_KEY = cleanEnvValue(
+  process.env.SUPABASE_SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_KEY ||
+  process.env.SUPABASE_SECRET_KEY ||
+  process.env.SERVICE_ROLE_KEY ||
+  process.env.SUPABASE_SERVICE_ROLE ||
+  process.env.SUPABASE_SECRET
+);
+const ANON_KEY = cleanEnvValue(
+  process.env.SUPABASE_ANON_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_PUBLISHABLE_KEY ||
+  process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
+  process.env.SUPABASE_PUBLISHABLE_KEY
+);
 const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS ?? 0);
 if (!Number.isInteger(TRUST_PROXY_HOPS) || TRUST_PROXY_HOPS < 0) {
   throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
@@ -195,7 +207,14 @@ app.post('/api/leads',leadLimiter,async(req,res)=>{
     const {data:recent,error:recentError}=await supabase.from(LEADS_TABLE).select('id,created_at').eq('whatsapp',lead.whatsapp).eq('name',lead.name).eq('goal',lead.goal).eq('package',lead.package).gte('created_at',new Date(Date.now()-30000).toISOString()).limit(1);
     if(recentError){
       logLeadEvent('error','supabase_duplicate_lookup_failed',{requestId,...supabaseErrorMetadata(recentError)});
-      return res.status(503).json({ok:false,error:'Unable to verify duplicate lead.',requestId});
+      return res.status(503).json({
+        ok:false,
+        error: recentError.code === '42501'
+          ? 'Supabase permission denied: SUPABASE_SERVICE_ROLE_KEY is missing or invalid in Vercel settings.'
+          : (recentError.message || 'Unable to verify duplicate lead.'),
+        code: recentError.code,
+        requestId
+      });
     }
     if(recent?.length){
       rememberRecentLead(key);
@@ -205,7 +224,14 @@ app.post('/api/leads',leadLimiter,async(req,res)=>{
     const {data:claim,error:claimError}=await supabase.rpc('claim_lead_dedupe',{p_dedupe_key:key,p_expires_at:new Date(Date.now()+30000).toISOString()});
     if(claimError){
       logLeadEvent('error','supabase_dedupe_claim_failed',{requestId,...supabaseErrorMetadata(claimError)});
-      return res.status(503).json({ok:false,error:'Unable to reserve lead submission.',requestId});
+      return res.status(503).json({
+        ok:false,
+        error: claimError.code === '42501'
+          ? 'Supabase permission denied: SUPABASE_SERVICE_ROLE_KEY is missing or invalid in Vercel settings.'
+          : (claimError.message || 'Unable to reserve lead submission.'),
+        code: claimError.code,
+        requestId
+      });
     }
     if(claim!==true){
       logLeadEvent('info','lead_duplicate_claim_blocked',{requestId});
@@ -214,14 +240,21 @@ app.post('/api/leads',leadLimiter,async(req,res)=>{
     const {data:inserted,error:insertError}=await supabase.from(LEADS_TABLE).insert(lead).select('id').single();
     if(insertError){
       logLeadEvent('error','supabase_lead_insert_failed',{requestId,...supabaseErrorMetadata(insertError)});
-      return res.status(503).json({ok:false,error:'Unable to store lead right now.',requestId});
+      return res.status(503).json({
+        ok:false,
+        error: insertError.code === '42501'
+          ? 'Supabase permission denied: SUPABASE_SERVICE_ROLE_KEY is missing or invalid in Vercel settings.'
+          : (insertError.message || 'Unable to store lead right now.'),
+        code: insertError.code,
+        requestId
+      });
     }
     rememberRecentLead(key);
     logLeadEvent('info','lead_saved',{requestId,leadId:inserted.id});
     return res.status(201).json({ok:true,leadId:inserted.id,requestId});
   }catch(error){
     logLeadEvent('error','lead_storage_unexpected_error',{requestId,...supabaseErrorMetadata(error)});
-    return res.status(503).json({ok:false,error:'Unable to store lead right now.',requestId});
+    return res.status(503).json({ok:false,error:error?.message||'Unable to store lead right now.',requestId});
   }
 });
 
@@ -254,7 +287,23 @@ app.get('/api/admin/stats',requireAdmin,async(_req,res)=>{
   const today=new Date().toISOString().slice(0,10); const stats={total:data.length,today:0,new:0,contacted:0,converted:0,rejected:0};
   for(const l of data){if(String(l.created_at).slice(0,10)===today)stats.today++;if(stats[l.status]!==undefined)stats[l.status]++;} return res.json({ok:true,stats});
 });
-app.get('/health',(_req,res)=>res.json({ok:true,supabase:Boolean(supabase),auth:Boolean(authClient),leadStorageConfigured:Boolean(supabase)}));
+app.get('/health',async(_req,res)=>{
+  let dbOk=false; let dbError=null;
+  if(supabase){
+    const {error}=await supabase.from(LEADS_TABLE).select('id').limit(1);
+    if(error){dbError={code:error.code,message:error.message};}else{dbOk=true;}
+  }
+  return res.json({
+    ok:true,
+    supabase:Boolean(supabase),
+    auth:Boolean(authClient),
+    leadStorageConfigured:Boolean(supabase),
+    dbOk,
+    dbError,
+    keyPrefix:SERVICE_KEY?SERVICE_KEY.slice(0,10):null,
+    keyLen:SERVICE_KEY?SERVICE_KEY.length:0
+  });
+});
 app.use('/admin',express.static(adminDir,{extensions:['html']}));
 app.get('/vendor/lucide.js',(_req,res)=>res.sendFile(path.join(rootDir,'node_modules','lucide','dist','umd','lucide.js')));
 app.use(express.static(publicDir,{extensions:['html']}));
