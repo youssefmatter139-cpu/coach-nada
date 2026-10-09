@@ -288,10 +288,18 @@ app.get('/api/admin/stats',requireAdmin,async(_req,res)=>{
   for(const l of data){if(String(l.created_at).slice(0,10)===today)stats.today++;if(stats[l.status]!==undefined)stats[l.status]++;} return res.json({ok:true,stats});
 });
 app.get('/health',async(_req,res)=>{
-  let dbOk=false; let dbError=null;
+  let dbOk=false; let dbError=null; let fetchProbe=null;
   if(supabase){
     const {error}=await supabase.from(LEADS_TABLE).select('id').limit(1);
-    if(error){dbError={code:error.code,message:error.message};}else{dbOk=true;}
+    if(error){dbError={code:error.code,message:error.message,details:error.details,hint:error.hint};}else{dbOk=true;}
+  }
+  try {
+    const rawRes = await fetch(SUPABASE_URL + '/rest/v1/', {
+      headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY }
+    });
+    fetchProbe = { status: rawRes.status };
+  } catch (e) {
+    fetchProbe = { error: e.message, code: e.code, cause: e.cause ? (e.cause.message || e.cause.code || String(e.cause)) : null };
   }
   return res.json({
     ok:true,
@@ -300,6 +308,8 @@ app.get('/health',async(_req,res)=>{
     leadStorageConfigured:Boolean(supabase),
     dbOk,
     dbError,
+    fetchProbe,
+    urlValue: SUPABASE_URL,
     keyPrefix:SERVICE_KEY?SERVICE_KEY.slice(0,10):null,
     keyLen:SERVICE_KEY?SERVICE_KEY.length:0
   });
