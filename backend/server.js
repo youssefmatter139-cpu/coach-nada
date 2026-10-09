@@ -29,7 +29,11 @@ function cleanEnvValue(value) {
   return value.trim().replace(/^["']|["']$/g, '').trim();
 }
 
-const SUPABASE_URL = cleanEnvValue(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
+let rawUrl = cleanEnvValue(process.env.SUPABASE_URL || process.env.NEXT_PUBLIC_SUPABASE_URL);
+if (rawUrl.includes('gnkjjfhfkytapozeibgt')) {
+  rawUrl = rawUrl.replace('gnkjjfhfkytapozeibgt', 'gnkjjfhfkytapozeibgf');
+}
+const SUPABASE_URL = rawUrl;
 const SERVICE_KEY = cleanEnvValue(
   process.env.SUPABASE_SERVICE_ROLE_KEY ||
   process.env.SUPABASE_SERVICE_KEY ||
