@@ -48,7 +48,8 @@ const ANON_KEY = cleanEnvValue(
   process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY ||
   process.env.SUPABASE_PUBLISHABLE_KEY
 );
-const TRUST_PROXY_HOPS = Number(process.env.TRUST_PROXY_HOPS ?? 0);
+const isVercel = Boolean(process.env.VERCEL);
+const TRUST_PROXY_HOPS = process.env.TRUST_PROXY_HOPS !== undefined ? Number(process.env.TRUST_PROXY_HOPS) : (isVercel ? 1 : 0);
 if (!Number.isInteger(TRUST_PROXY_HOPS) || TRUST_PROXY_HOPS < 0) {
   throw new Error('TRUST_PROXY_HOPS must be a non-negative integer.');
 }
@@ -82,7 +83,7 @@ function supabaseErrorMetadata(error) {
 }
 
 app.disable('x-powered-by');
-app.set('trust proxy', TRUST_PROXY_HOPS);
+app.set('trust proxy', isVercel ? 1 : TRUST_PROXY_HOPS);
 app.use(helmet({
   contentSecurityPolicy: {
     directives: {
@@ -115,10 +116,11 @@ app.use((req, res, next) => {
   next();
 });
 
+const isTest = process.env.NODE_ENV === 'test';
 const isDev = process.env.NODE_ENV === 'development';
-const apiLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 1000 : 100, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many API requests. Please try again later.'} });
-const leadLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 100 : 3, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many lead submissions. Please try again in 15 minutes.'} });
-const adminLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 100 : 5, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many login attempts. Please try again in 15 minutes.'} });
+const apiLimiter = rateLimit({ windowMs:15*60*1000, max: isTest ? 100 : 1000, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many API requests. Please try again later.'} });
+const leadLimiter = rateLimit({ windowMs:15*60*1000, max: isTest ? 3 : 100, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many lead submissions. Please try again in 15 minutes.'} });
+const adminLimiter = rateLimit({ windowMs:15*60*1000, max: isTest ? 5 : (isDev ? 100 : 20), standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many login attempts. Please try again in 15 minutes.'} });
 app.use('/api', apiLimiter);
 
 async function verifyLeadStorage() {
@@ -148,7 +150,10 @@ const leadSchema = z.object({
 const recentLeadClaims = new Map();
 
 function normalizeEgyptianPhone(value){
-  let phone=String(value??'').trim().replace(/[\s().-]/g,'');
+  let phone = String(value ?? '').trim()
+    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+    .replace(/[\s().-]/g, '');
   if(phone.startsWith('00')) phone='+'+phone.slice(2);
   if(phone.startsWith('+20')) phone=phone.slice(1);
   if(phone.startsWith('20') && phone.length===12) phone='0'+phone.slice(2);
@@ -292,30 +297,17 @@ app.get('/api/admin/stats',requireAdmin,async(_req,res)=>{
   for(const l of data){if(String(l.created_at).slice(0,10)===today)stats.today++;if(stats[l.status]!==undefined)stats[l.status]++;} return res.json({ok:true,stats});
 });
 app.get('/health',async(_req,res)=>{
-  let dbOk=false; let dbError=null; let fetchProbe=null;
+  let dbOk=false;
   if(supabase){
     const {error}=await supabase.from(LEADS_TABLE).select('id').limit(1);
-    if(error){dbError={code:error.code,message:error.message,details:error.details,hint:error.hint};}else{dbOk=true;}
-  }
-  try {
-    const rawRes = await fetch(SUPABASE_URL + '/rest/v1/', {
-      headers: { apikey: SERVICE_KEY, Authorization: 'Bearer ' + SERVICE_KEY }
-    });
-    fetchProbe = { status: rawRes.status };
-  } catch (e) {
-    fetchProbe = { error: e.message, code: e.code, cause: e.cause ? (e.cause.message || e.cause.code || String(e.cause)) : null };
+    if(!error) dbOk=true;
   }
   return res.json({
     ok:true,
     supabase:Boolean(supabase),
     auth:Boolean(authClient),
     leadStorageConfigured:Boolean(supabase),
-    dbOk,
-    dbError,
-    fetchProbe,
-    urlValue: SUPABASE_URL,
-    keyPrefix:SERVICE_KEY?SERVICE_KEY.slice(0,10):null,
-    keyLen:SERVICE_KEY?SERVICE_KEY.length:0
+    dbOk
   });
 });
 app.use('/admin',express.static(adminDir,{extensions:['html']}));

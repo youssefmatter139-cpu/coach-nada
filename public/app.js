@@ -14,7 +14,10 @@ function openModal(html){const modal=$('#modal'),content=$('#modalContent');if(!
 function closeModal(){const modal=$('#modal');if(!modal)return;modal.classList.add('hidden');modal.classList.remove('flex');document.body.classList.remove('overflow-hidden');leadSubmitting=false}
 
 function normalizeEgyptianPhone(value){
-  let phone=String(value||'').trim().replace(/[\s().-]/g,'');
+  let phone=String(value||'').trim()
+    .replace(/[٠-٩]/g, d => '0123456789'['٠١٢٣٤٥٦٧٨٩'.indexOf(d)])
+    .replace(/[۰-۹]/g, d => '0123456789'['۰۱۲۳۴۵۶۷۸۹'.indexOf(d)])
+    .replace(/[\s().-]/g,'');
   if(phone.startsWith('00'))phone='+'+phone.slice(2);
   if(phone.startsWith('+20'))phone=phone.slice(1);
   if(phone.startsWith('20')&&phone.length===12)phone='0'+phone.slice(2);
@@ -62,29 +65,25 @@ async function submitLead(e){
   if(isDuplicateLead(name,normalized)){error.textContent='تم إرسال نفس الطلب بالفعل. لو محتاجة تعيدي المحاولة انتظري 30 ثانية.';return}
   const data={name,whatsapp:normalized,goal,package:packageName,package_price:planPrices[packageName],fitness_goal:goal,source:'landing-page',whatsapp_opened_at:new Date().toISOString()};
   const backupSaved=saveLeadFallback(data);
-  leadSubmitting=true;button.disabled=true;button.classList.add('opacity-60','cursor-not-allowed');button.textContent='جاري حفظ البيانات…';
+  leadSubmitting=true;button.disabled=true;button.classList.add('opacity-60','cursor-not-allowed');button.textContent='جاري حفظ البيانات وتأكيد الحجز…';
   error.textContent='';
   const message=`مساء الخير كابتن ندى، أنا ${name} سجلت في الموقع ومحتاجة تفاصيل الاشتراك في باقة ${packageName}. هدفي هو ${goalLabels[goal]}.`;
   const waUrl=`https://wa.me/201227085543?text=${encodeURIComponent(message)}`;
-  let waWindow=null;try{waWindow=window.open('about:blank','_blank');if(waWindow)waWindow.opener=null}catch{}
-  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);
+  const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),12000);
   try{
     const response=await fetch(`${API_BASE}/api/leads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:controller.signal});
     const result=await response.json().catch(()=>({}));
-    if(!response.ok)throw new Error(`${response.status}: ${result.error||'Server rejected the lead.'}${result.requestId?` (request ${result.requestId})`:''}`);
+    if(!response.ok)throw new Error(result.error||`Server error (${response.status})`);
     removePendingLead(data);
     rememberLead(name,normalized);
-    if(waWindow)waWindow.location.replace(waUrl);
-    else window.location.href=waUrl;
-    closeModal();
+    button.textContent='تم الحفظ بنجاح! جاري الانتقال للواتساب…';
+    setTimeout(()=>{
+      window.location.href=waUrl;
+    },400);
   }catch(err){
-    console.error('Lead submission failed; the request was not confirmed as saved.',{message:err.message,backupSaved});
-    error.textContent=backupSaved
-      ?'تعذر تأكيد حفظ بياناتك في قاعدة البيانات. تم الاحتفاظ بمحاولة الإرسال على هذا الجهاز؛ افتحي واتساب الآن، ثم أعيدي المحاولة لاحقًا أو تواصلي مع الدعم.'
-      :'تعذر حفظ البيانات على الخادم أو هذا الجهاز. افتحي واتساب، ثم تواصلي مع الدعم لإتمام التسجيل.';
+    console.error('Lead submission failed;',err);
+    error.innerHTML=`حدث خطأ أثناء حفظ البيانات: <b>${err.message}</b>.<br><a href="${waUrl}" target="_blank" class="text-rose-300 underline font-bold mt-2 inline-block">اضغطي هنا للمتابعة للواتساب مباشرة ↗</a>`;
     button.disabled=false;button.classList.remove('opacity-60','cursor-not-allowed');button.textContent='إعادة محاولة الحفظ';
-    if(waWindow)waWindow.location.replace(waUrl);
-    else window.location.href=waUrl;
   }finally{
     clearTimeout(timeout);
     leadSubmitting=false;
