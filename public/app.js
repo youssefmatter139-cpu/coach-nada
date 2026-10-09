@@ -123,4 +123,9 @@ document.addEventListener('click', event=>{
   if(event.target.closest('#mobileMenu a')) $('#mobileMenu')?.classList.add('hidden');
 });
 
-renderIcons();
+if (document.readyState === 'loading') {
+  document.addEventListener('DOMContentLoaded', renderIcons);
+} else {
+  renderIcons();
+}
+window.addEventListener('load', renderIcons);
