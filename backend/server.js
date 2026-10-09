@@ -260,7 +260,11 @@ app.get('/vendor/lucide.js',(_req,res)=>res.sendFile(path.join(rootDir,'node_mod
 app.use(express.static(publicDir,{extensions:['html']}));
 app.get('/admin/*',(_req,res)=>res.sendFile(path.join(adminDir,'index.html')));
 app.get('*',(_req,res)=>res.sendFile(path.join(publicDir,'index.html')));
-app.listen(PORT,()=>{
-  console.log(`Coach Nada site running on http://localhost:${PORT}`);
-  void verifyLeadStorage().catch(error=>logLeadEvent('error','supabase_startup_check_crashed',supabaseErrorMetadata(error)));
-});
+if (!process.env.VERCEL) {
+  app.listen(PORT,()=>{
+    console.log(`Coach Nada site running on http://localhost:${PORT}`);
+    void verifyLeadStorage().catch(error=>logLeadEvent('error','supabase_startup_check_crashed',supabaseErrorMetadata(error)));
+  });
+}
+
+export default app;
