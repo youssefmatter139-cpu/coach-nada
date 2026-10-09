@@ -7,6 +7,7 @@ let leadSubmitting=false;
 
 const $=s=>document.querySelector(s);
 const $$=s=>[...document.querySelectorAll(s)];
+const API_BASE = window.location.protocol === 'file:' ? 'http://localhost:3000' : '';
 
 function renderIcons(){if(window.lucide)window.lucide.createIcons()}
 function openModal(html){const modal=$('#modal'),content=$('#modalContent');if(!modal||!content)return;content.innerHTML=html;modal.classList.remove('hidden');modal.classList.add('flex');document.body.classList.add('overflow-hidden');renderIcons()}
@@ -47,7 +48,7 @@ function isDuplicateLead(name,phone){
 function rememberLead(name,phone){try{localStorage.setItem('coach_nada_recent_lead',JSON.stringify({name,whatsapp:phone,timestamp:Date.now()}))}catch{}}
 function saveLeadFallback(data){try{const existing=JSON.parse(localStorage.getItem('coach_nada_pending_leads')||'[]');const key=[data.name.toLowerCase(),data.whatsapp,data.goal,data.package].join('|');if(!existing.some(x=>x.key===key)){existing.unshift({key,...data,createdAt:new Date().toISOString(),source:'landing-page'});localStorage.setItem('coach_nada_pending_leads',JSON.stringify(existing.slice(0,500)))}return true}catch(err){console.error('Lead backup could not be stored in this browser.',err);return false} }
 function removePendingLead(data){try{const existing=JSON.parse(localStorage.getItem('coach_nada_pending_leads')||'[]');const key=[data.name.toLowerCase(),data.whatsapp,data.goal,data.package].join('|');localStorage.setItem('coach_nada_pending_leads',JSON.stringify(existing.filter(x=>x.key!==key)))}catch{} }
-async function syncPendingLeads(){try{const pending=JSON.parse(localStorage.getItem('coach_nada_pending_leads')||'[]');for(const item of pending.slice(0,10)){const {key,...data}=item;const response=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),keepalive:true});if(response.ok)removePendingLead(data)}}catch{} }
+async function syncPendingLeads(){try{const pending=JSON.parse(localStorage.getItem('coach_nada_pending_leads')||'[]');for(const item of pending.slice(0,10)){const {key,...data}=item;const response=await fetch(`${API_BASE}/api/leads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),keepalive:true});if(response.ok)removePendingLead(data)}}catch{} }
 
 async function submitLead(e){
   e.preventDefault(); if(leadSubmitting)return;
@@ -68,7 +69,7 @@ async function submitLead(e){
   let waWindow=null;try{waWindow=window.open('about:blank','_blank');if(waWindow)waWindow.opener=null}catch{}
   const controller=new AbortController(),timeout=setTimeout(()=>controller.abort(),10000);
   try{
-    const response=await fetch('/api/leads',{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:controller.signal,credentials:'same-origin'});
+    const response=await fetch(`${API_BASE}/api/leads`,{method:'POST',headers:{'Content-Type':'application/json'},body:JSON.stringify(data),signal:controller.signal});
     const result=await response.json().catch(()=>({}));
     if(!response.ok)throw new Error(`${response.status}: ${result.error||'Server rejected the lead.'}${result.requestId?` (request ${result.requestId})`:''}`);
     removePendingLead(data);

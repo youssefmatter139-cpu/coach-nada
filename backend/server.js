@@ -88,9 +88,21 @@ app.use(compression());
 app.use(express.json({ limit:'20kb', strict:true }));
 app.use(morgan(process.env.NODE_ENV === 'production' ? 'combined' : 'dev'));
 
-const apiLimiter = rateLimit({ windowMs:15*60*1000, max:100, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many API requests. Please try again later.'} });
-const leadLimiter = rateLimit({ windowMs:15*60*1000, max:3, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many lead submissions. Please try again in 15 minutes.'} });
-const adminLimiter = rateLimit({ windowMs:15*60*1000, max:5, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many login attempts. Please try again in 15 minutes.'} });
+app.use((req, res, next) => {
+  const origin = req.headers.origin;
+  if (!origin || origin === 'null' || origin.startsWith('http://localhost:') || origin.startsWith('http://127.0.0.1:')) {
+    res.setHeader('Access-Control-Allow-Origin', origin || '*');
+    res.setHeader('Access-Control-Allow-Methods', 'GET, POST, PATCH, OPTIONS');
+    res.setHeader('Access-Control-Allow-Headers', 'Content-Type, Authorization');
+  }
+  if (req.method === 'OPTIONS') return res.sendStatus(204);
+  next();
+});
+
+const isDev = process.env.NODE_ENV === 'development';
+const apiLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 1000 : 100, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many API requests. Please try again later.'} });
+const leadLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 100 : 3, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many lead submissions. Please try again in 15 minutes.'} });
+const adminLimiter = rateLimit({ windowMs:15*60*1000, max: isDev ? 100 : 5, standardHeaders:true, legacyHeaders:false, message:{ok:false,error:'Too many login attempts. Please try again in 15 minutes.'} });
 app.use('/api', apiLimiter);
 
 async function verifyLeadStorage() {
